@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+
+"""
+    Copyright 2015 Shawn Kinkade
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+"""    
+
+import sys
+import libnacl
+import libnacl.utils
+from getpass import getpass
+
+SV_MAGICNUM  = b'SALTVAULT0'
+LEN_MAGICNUM = 10
+LEN_NONCE    = 24
+LEN_KEY      = 32
+LEN_PROT_BOX = 72
+
+sha256          = libnacl.crypto_hash_sha256
+sha512          = libnacl.crypto_hash_sha512
+rand_nonce      = libnacl.utils.rand_nonce
+salsa_key       = libnacl.utils.salsa_key
+secretbox       = libnacl.crypto_secretbox
+secretbox_open  = libnacl.crypto_secretbox_open
+
+
+
+# Plaintext passwords confined to one local scope
+
+def get_enc_pass():
+    enc_pass = getpass(prompt='Encryption password: ')
+    if 8 <= len(enc_pass) <= 100:
+        if getpass(prompt='Confirm password: ') == enc_pass:
+            saltnonce = rand_nonce()
+            return sha512(saltnonce + enc_pass.encode('utf-8')), saltnonce
+        else:
+            print('Passwords did not match')
+            get_enc_pass()
+    else:
+        print('Password is of unreasonable length')
+        get_enc_pass()
+
+def get_dec_pass(user_input):
+    dec_pass = getpass(prompt='Decryption password: ')
+    if 8 <= len(dec_pass) <= 100:
+        user_input.seek(LEN_MAGICNUM)
+        saltnonce = user_input.read(LEN_NONCE)
+        return sha512(saltnonce + dec_pass.encode('utf-8')), saltnonce
+    else:
+        print('Password is of unreasonable length')
+        get_dec_pass(user_input)
+
+
+# Intensive but not too noticeable
+
+def kdf(pass_hash, salt):
+    for i in range(2, 2**17):
+        pass_hash = sha512(salt + pass_hash)
+    return sha256(salt + pass_hash)
+
+
+# Random key is protected with user-generated key
+
+def sv_enc(plaindata, cipherdata):
+    pass_hash, saltnonce = get_enc_pass()
+    prot_key = kdf(pass_hash, saltnonce)
+    
+    data_key   = salsa_key()
+    data_nonce = rand_nonce()
+    prot_box   = secretbox(data_nonce + data_key, saltnonce, prot_key)
+    
+    cipherdata.write(SV_MAGICNUM
+                       + saltnonce
+                       + prot_box
+                       + secretbox(plaindata.read(), data_nonce, data_key))
+
+def sv_dec(cipherdata, plaindata):
+    pass_hash, saltnonce = get_dec_pass(cipherdata)
+    prot_key = kdf(pass_hash, saltnonce)
+    
+    cipherdata.seek(LEN_MAGICNUM + LEN_NONCE)
+    prot_box = cipherdata.read(LEN_PROT_BOX)
+    
+    prot_keynonce = secretbox_open(prot_box, saltnonce, prot_key)
+    
+    data_nonce = prot_keynonce[0:LEN_NONCE]
+    data_key   = prot_keynonce[LEN_NONCE:LEN_NONCE + LEN_KEY]
+    
+    cipherdata.seek(LEN_MAGICNUM + LEN_NONCE + LEN_PROT_BOX)
+    plaindata.write(secretbox_open(cipherdata.read(), data_nonce, data_key))
+
+
+
+if __name__ == '__main__':
+    if len(sys.argv) != 3:
+        print('saltvault: A simple NaCl file encryption utility\n')
+        print('Usage:\n   ', str(sys.argv[0]), 'input_file output_file\n')
+        exit()
+
+    try:
+        user_input = open(str(sys.argv[1]), 'rb')
+    except IOError:
+        print('Input file not found')
+        exit()
+
+    try:
+        user_output = open(str(sys.argv[2]), 'xb')
+    except IOError:
+        print('Output file already exists')
+        exit()
+    
+    if user_input.read(LEN_MAGICNUM) == SV_MAGICNUM:
+        sv_dec(user_input, user_output)
+    else:
+        user_input.seek(0)
+        sv_enc(user_input, user_output)
