@@ -39,7 +39,7 @@ secretbox_open  = libnacl.crypto_secretbox_open
 
 # Plaintext passwords confined to one local scope
 
-def get_enc_pass():
+def get_enc_hash():
     enc_pass = getpass(prompt='Encryption password: ')
     if 8 <= len(enc_pass) <= 100:
         if getpass(prompt='Confirm password: ') == enc_pass:
@@ -47,12 +47,12 @@ def get_enc_pass():
             return sha512(saltnonce + enc_pass.encode('utf-8')), saltnonce
         else:
             print('Passwords did not match')
-            get_enc_pass()
+            get_enc_hash()
     else:
         print('Password is of unreasonable length')
-        get_enc_pass()
+        get_enc_hash()
 
-def get_dec_pass(user_input):
+def get_dec_hash(user_input):
     dec_pass = getpass(prompt='Decryption password: ')
     if 8 <= len(dec_pass) <= 100:
         user_input.seek(LEN_MAGICNUM)
@@ -60,7 +60,7 @@ def get_dec_pass(user_input):
         return sha512(saltnonce + dec_pass.encode('utf-8')), saltnonce
     else:
         print('Password is of unreasonable length')
-        get_dec_pass(user_input)
+        get_dec_hash(user_input)
 
 
 # Intensive but not too noticeable
@@ -74,30 +74,30 @@ def kdf(pass_hash, salt):
 # Random key is protected with user-generated key
 
 def sv_enc(plaindata, cipherdata):
-    pass_hash, saltnonce = get_enc_pass()
+    pass_hash, saltnonce = get_enc_hash()
     prot_key = kdf(pass_hash, saltnonce)
-    
+
     data_key   = salsa_key()
     data_nonce = rand_nonce()
     prot_box   = secretbox(data_nonce + data_key, saltnonce, prot_key)
-    
+
     cipherdata.write(SV_MAGICNUM
                        + saltnonce
                        + prot_box
                        + secretbox(plaindata.read(), data_nonce, data_key))
 
 def sv_dec(cipherdata, plaindata):
-    pass_hash, saltnonce = get_dec_pass(cipherdata)
+    pass_hash, saltnonce = get_dec_hash(cipherdata)
     prot_key = kdf(pass_hash, saltnonce)
-    
+
     cipherdata.seek(LEN_MAGICNUM + LEN_NONCE)
     prot_box = cipherdata.read(LEN_PROT_BOX)
-    
+
     prot_keynonce = secretbox_open(prot_box, saltnonce, prot_key)
-    
+
     data_nonce = prot_keynonce[0:LEN_NONCE]
     data_key   = prot_keynonce[LEN_NONCE:LEN_NONCE + LEN_KEY]
-    
+
     cipherdata.seek(LEN_MAGICNUM + LEN_NONCE + LEN_PROT_BOX)
     plaindata.write(secretbox_open(cipherdata.read(), data_nonce, data_key))
 
@@ -120,7 +120,7 @@ if __name__ == '__main__':
     except IOError:
         print('Output file already exists')
         exit()
-    
+
     if user_input.read(LEN_MAGICNUM) == SV_MAGICNUM:
         sv_dec(user_input, user_output)
     else:
