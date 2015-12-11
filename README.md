@@ -17,6 +17,13 @@ derivatives, this can be installed with pip3:
 ```
 
 
+## Disclaimer
+
+Consider this software purely experimental. **Do not use this software to
+protect anything sensitive.**
+
+
+
 # Crypto
 
 ```saltvault``` uses the SecretBox format via [libnacl](https://github.com/saltstack/libnacl).
@@ -32,8 +39,7 @@ Another nonce is generated and used for salt. As a key derivation function,
 2^17 iterations of SHA-512 are performed on the salt and a user-provided password.
 The SHA-256 of the result is used for a protection key.
 
-The salt-nonce and protection key are used to create a SecretBox for the randomly-
-generated nonce and key used to encrypt the input file.
+The salt-nonce and protection key are used to create a SecretBox for the randomly-generated nonce and key used to encrypt the input file.
 
 
 ## File contents
