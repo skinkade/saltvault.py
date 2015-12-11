@@ -17,8 +17,13 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """    
 
+try:
+    import libnacl
+except ImportError:
+    print('Please install libnacl')
+    exit()
+
 import sys
-import libnacl
 import libnacl.utils
 from getpass import getpass
 
@@ -44,13 +49,14 @@ def get_enc_hash():
     if 8 <= len(enc_pass) <= 100:
         if getpass(prompt='Confirm password: ') == enc_pass:
             saltnonce = rand_nonce()
+            print(enc_pass, enc_pass.encode('utf-8'), saltnonce)
             return sha512(saltnonce + enc_pass.encode('utf-8')), saltnonce
         else:
             print('Passwords did not match')
-            get_enc_hash()
+            return get_enc_hash()
     else:
         print('Password is of unreasonable length')
-        get_enc_hash()
+        return get_enc_hash()
 
 def get_dec_hash(user_input):
     dec_pass = getpass(prompt='Decryption password: ')
@@ -60,7 +66,7 @@ def get_dec_hash(user_input):
         return sha512(saltnonce + dec_pass.encode('utf-8')), saltnonce
     else:
         print('Password is of unreasonable length')
-        get_dec_hash(user_input)
+        return get_dec_hash(user_input)
 
 
 # Intensive but not too noticeable
