@@ -49,7 +49,6 @@ def get_enc_hash():
     if 8 <= len(enc_pass) <= 100:
         if getpass(prompt='Confirm password: ') == enc_pass:
             saltnonce = rand_nonce()
-            print(enc_pass, enc_pass.encode('utf-8'), saltnonce)
             return sha512(saltnonce + enc_pass.encode('utf-8')), saltnonce
         else:
             print('Passwords did not match')
@@ -79,7 +78,7 @@ def kdf(pass_hash, salt):
 
 # Random key is protected with user-generated key
 
-def sv_enc(plaindata, cipherdata):
+def sv_enc(plaindata, user_output):
     pass_hash, saltnonce = get_enc_hash()
     prot_key = kdf(pass_hash, saltnonce)
 
@@ -87,24 +86,41 @@ def sv_enc(plaindata, cipherdata):
     data_nonce = rand_nonce()
     prot_box   = secretbox(data_nonce + data_key, saltnonce, prot_key)
 
+    try:
+        cipherdata = open(user_output, 'xb')
+    except IOError:
+        print('Output file already exists')
+        exit()
+
     cipherdata.write(SV_MAGICNUM
                        + saltnonce
                        + prot_box
                        + secretbox(plaindata.read(), data_nonce, data_key))
 
-def sv_dec(cipherdata, plaindata):
+def sv_dec(cipherdata, user_output):
     pass_hash, saltnonce = get_dec_hash(cipherdata)
     prot_key = kdf(pass_hash, saltnonce)
 
     cipherdata.seek(LEN_MAGICNUM + LEN_NONCE)
     prot_box = cipherdata.read(LEN_PROT_BOX)
 
-    prot_keynonce = secretbox_open(prot_box, saltnonce, prot_key)
+    try:
+        prot_keynonce = secretbox_open(prot_box, saltnonce, prot_key)
+    except ValueError:
+        print('Incorrect password')
+        exit()
 
     data_nonce = prot_keynonce[0:LEN_NONCE]
     data_key   = prot_keynonce[LEN_NONCE:LEN_NONCE + LEN_KEY]
 
     cipherdata.seek(LEN_MAGICNUM + LEN_NONCE + LEN_PROT_BOX)
+    
+    try:
+        plaindata = open(user_output, 'xb')
+    except IOError:
+        print('Output file already exists')
+        exit()
+    
     plaindata.write(secretbox_open(cipherdata.read(), data_nonce, data_key))
 
 
@@ -121,14 +137,8 @@ if __name__ == '__main__':
         print('Input file not found')
         exit()
 
-    try:
-        user_output = open(str(sys.argv[2]), 'xb')
-    except IOError:
-        print('Output file already exists')
-        exit()
-
     if user_input.read(LEN_MAGICNUM) == SV_MAGICNUM:
-        sv_dec(user_input, user_output)
+        sv_dec(user_input, str(sys.argv[2]))
     else:
         user_input.seek(0)
-        sv_enc(user_input, user_output)
+        sv_enc(user_input, str(sys.argv[2]))
